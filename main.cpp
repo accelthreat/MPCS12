@@ -19,6 +19,7 @@ string playerTypeToString(PlayerType a) {
   if (a == PlayerType::alien) return "alien";
   if (a == PlayerType::zombie) return "zombie";
   if (a == PlayerType::dog) return "dog";
+  return "error";
 }
 
 class Limb {
@@ -333,25 +334,21 @@ class Team {
     }
     dead = true;
   }
+
   Player* getCurrentPlayer() {
     int orig_index = curr_index;
-    for (int index = curr_index; index < players.size(); index++) {
+    int index = curr_index;
+    do {
       if (!players[index]->turn_skip() && !players[index]->isDead()) {
-        curr_index = index + 1;
+        curr_index = (index + 1) % n_players;
         return players[index];
-        debug_print("dafuq");
       }
-    }
-    for (int index = 0; index < orig_index; index++) {
-      if (!players[index]->turn_skip() && !players[index]->isDead()) {
-        curr_index = index + 1;
-        return players[index];
-        debug_print("dafuq");
-      }
-    }
+      index = (index + 1) % n_players;
+    } while (index != orig_index);
     debug_print("Null");
     return nullptr;
   }
+
   string getPrintableStatus() {
     stringstream ss;
     ss << "Team " << team_num << ": ";
