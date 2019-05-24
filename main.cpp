@@ -9,8 +9,10 @@
 
 using namespace std;
 
-#define HAND 0
-#define FEET 1
+enum class LimbType {
+    HAND,
+    FEET
+};
 
 enum class PlayerType {
     human = 0,
@@ -146,12 +148,12 @@ class Player : public Subject {
     PlayerType get_type() { return type; }
     void skipTurn() { skip = true; }
 
-    void distribute(vector<int> params, int limbType) {
-        if (limbType == HAND) {
+    void distribute(vector<int> params, LimbType limbType) {
+        if (limbType == LimbType::HAND) {
             for (int i = 0; i < hands.size(); i++) {
                 hands[i]->set_digits(params[i]);
             }
-        } else if (limbType == FEET) {
+        } else if (limbType == LimbType::FEET) {
             for (int i = 0; i < feet.size(); i++) {
                 feet[i]->set_digits(params[i]);
             }
@@ -520,14 +522,14 @@ class Game {
                     cin >> x;
                     params.push_back(x);
                 }
-                p->distribute(params, FEET);
+                p->distribute(params, LimbType::FEET);
             } else {
                 for (int i = 0; i < p->get_hands(); i++) {
                     int x;
                     cin >> x;
                     params.push_back(x);
                 }
-                p->distribute(params, HAND);
+                p->distribute(params, LimbType::HAND);
             }
         }
     }
