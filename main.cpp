@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -79,8 +80,6 @@ class IObserver {
   EventType type;
 };
 
-// Add skipping when foot is dead
-
 class Subject {
  protected:
   unordered_set<IObserver*> observers;
@@ -149,22 +148,25 @@ class Player : public Subject {
     }
     return dead;
   }
-  void print() {
-    cout << "P" << order << playerTypeToString(type)[0] << " (";
+
+  string getPrintableStatus() {
+    stringstream ss;
+    ss << "P" << order << playerTypeToString(type)[0] << " (";
     for (int i = 0; i < hands.size(); i++) {
       string digits = "X";
       if (!hands[i]->isDead()) digits = to_string(hands[i]->get_digits());
-      cout << digits;
+      ss << digits;
     }
 
-    cout << ":";
+    ss << ":";
 
     for (int i = 0; i < feet.size(); i++) {
       string digits = "X";
       if (!feet[i]->isDead()) digits = to_string(feet[i]->get_digits());
-      cout << digits;
+      ss << digits;
     }
-    cout << ")";
+    ss << ")";
+    return ss.str();
   }
 
   bool turn_skip() {
@@ -197,7 +199,6 @@ class OnFootDie : public IPlayerObserver {
   OnFootDie(Player* p) : IPlayerObserver(p) { type = EventType::onFootDie; }
   void update(EventType type) {
     if (this->type == type) {
-      // cout << "Wow may namatay na foot" << endl;
       p->skipTurn();
     }
   }
@@ -237,6 +238,7 @@ class Alien : public Player {
   Alien(int p_team, int p_order) : Player(p_team, p_order) {
     type = PlayerType::alien;
     observers.insert(new OnTapDog(this));
+
     for (int i = 0; i < 4; i++) {
       Limb* h = new Hand(3);
       hands.push_back(h);
@@ -314,6 +316,8 @@ class Team {
   }
   int getTeamNumber() { return team_num; }
   bool isDead() { return dead; }
+  int get_size() { return n_players; }
+
   void add_player(Player* p) {
     n_players++;
     players.push_back(p);
@@ -329,10 +333,7 @@ class Team {
     }
     dead = true;
   }
-  //[0,1]
   Player* getCurrentPlayer() {
-    // cout << "Team " << team_num << endl;
-    // cout << "Curr_index_before" << curr_index << endl;
     int orig_index = curr_index;
     for (int index = curr_index; index < players.size(); index++) {
       if (!players[index]->turn_skip() && !players[index]->isDead()) {
@@ -351,8 +352,15 @@ class Team {
     debug_print("Null");
     return nullptr;
   }
-
-  int get_size() { return n_players; }
+  string getPrintableStatus() {
+    stringstream ss;
+    ss << "Team " << team_num << ": ";
+    for (int i = 0; i < players.size(); i++) {
+      ss << players[i]->getPrintableStatus();
+      if (i != players.size() - 1) ss << " | ";
+    }
+    return ss.str();
+  }
 };
 
 class Game {
@@ -398,13 +406,7 @@ class Game {
 
   void status() {
     for (int t = 0; t < n_teams; t++) {
-      int p_num = teams[t]->get_size();
-      cout << "Team " << teams[t]->getTeamNumber() << ": ";
-      for (int p = 0; p < p_num; p++) {
-        teams[t]->getPlayer(p)->print();
-        if (p < p_num - 1) cout << " | ";
-      }
-      cout << "\n";
+      cout << teams[t]->getPrintableStatus() << "\n";
     }
     cout << "\n";
   }
@@ -424,8 +426,6 @@ class Game {
   void Start() {
     int t = 0;
     while (!OneLeft()) {
-      // Check if Team is dead; move this to an observer
-      teams[t]->checkDead();
       if (!teams[t]->isDead()) {
         Player* p = teams[t]->getCurrentPlayer();
         if (p != nullptr) {
