@@ -81,7 +81,14 @@ class IObserver {
   EventType type;
 };
 
-class Subject {
+class ISubject {
+ public:
+  virtual void attach(IObserver* observer) = 0;
+  virtual void detach(IObserver* observer) = 0;
+  virtual void notify(EventType type) = 0;
+};
+
+class Subject : public ISubject {
  protected:
   unordered_set<IObserver*> observers;
 
@@ -103,6 +110,7 @@ class Player : public Subject {
   PlayerType type;
   vector<Limb*> hands;
   vector<Limb*> feet;
+  int turns;
 
  public:
   Player(int p_team, int p_order) {
@@ -110,13 +118,14 @@ class Player : public Subject {
     order = p_order;
     skip = false;
   }
-
+  int getTurns() { return turns; }
+  int getTeamNumber() { return team; }
   int get_ord() { return order; }
   int get_hands() { return hands.size(); }
   int get_feet() { return feet.size(); }
   PlayerType get_type() { return type; }
   void skipTurn() { skip = true; }
-
+  bool ready() { return !skip && !isDead(); }
   void distribute(vector<int> params, LimbType limbType) {
     if (limbType == LimbType::HAND) {
       for (int i = 0; i < hands.size(); i++) {
@@ -190,11 +199,9 @@ class Player : public Subject {
 class IPlayerObserver : public IObserver {
  protected:
   Player* p;
-  IPlayerObserver(Player* p) {
-    p->attach(this);
-    this->p = p;
-  }
+  IPlayerObserver(Player* p) { this->p = p; }
 };
+
 class OnFootDie : public IPlayerObserver {
  public:
   OnFootDie(Player* p) : IPlayerObserver(p) { type = EventType::onFootDie; }
@@ -219,9 +226,10 @@ class OnTapDog : public IPlayerObserver {
 class Human : public Player {
  public:
   Human(int p_team, int p_order) : Player(p_team, p_order) {
+    turns = 1;
     type = PlayerType::human;
-    observers.insert(new OnFootDie(this));
-    observers.insert(new OnTapDog(this));
+    attach(new OnFootDie(this));
+    attach(new OnTapDog(this));
     for (int i = 0; i < 2; i++) {
       Limb* h = new Hand(5);
       hands.push_back(h);
@@ -237,8 +245,9 @@ class Human : public Player {
 class Alien : public Player {
  public:
   Alien(int p_team, int p_order) : Player(p_team, p_order) {
+    turns = 1;
     type = PlayerType::alien;
-    observers.insert(new OnTapDog(this));
+    attach(new OnTapDog(this));
 
     for (int i = 0; i < 4; i++) {
       Limb* h = new Hand(3);
@@ -281,9 +290,10 @@ class OnZombieHandDie : public IPlayerObserver {
 };
 
 Zombie::Zombie(int p_team, int p_order) : Player(p_team, p_order) {
+  turns = 2;
   type = PlayerType::zombie;
-  observers.insert(new OnTapDog(this));
-  observers.insert(new OnZombieHandDie(this));
+  attach(new OnTapDog(this));
+  attach(new OnZombieHandDie(this));
   Limb* h1 = new Hand(4);
 
   hands.push_back(h1);
@@ -292,8 +302,9 @@ Zombie::Zombie(int p_team, int p_order) : Player(p_team, p_order) {
 class Doggo : public Player {
  public:
   Doggo(int p_team, int p_order) : Player(p_team, p_order) {
+    turns = 1;
     type = PlayerType::dog;
-    observers.insert(new OnFootDie(this));
+    attach(new OnFootDie(this));
     for (int i = 0; i < 4; i++) {
       Limb* f = new Foot(4);
       feet.push_back(f);
@@ -301,7 +312,7 @@ class Doggo : public Player {
   }
 };
 
-class Team {
+class Team : public Subject {
  private:
   int team_num;
   int n_players;
@@ -310,11 +321,7 @@ class Team {
   bool dead = false;
 
  public:
-  Team(int n) {
-    team_num = n;
-    n_players = 0;
-    curr_index = 0;
-  }
+  Team(int n);
   int getTeamNumber() { return team_num; }
   bool isDead() { return dead; }
   int get_size() { return n_players; }
@@ -346,6 +353,8 @@ class Team {
       index = (index + 1) % n_players;
     } while (index != orig_index);
     debug_print("Null");
+    // cout << "NullPlayer" << endl;
+    // Team has no ready players
     return nullptr;
   }
 
@@ -360,15 +369,29 @@ class Team {
   }
 };
 
+class ITeamObserver : public IObserver {
+ protected:
+  Team* t;
+  ITeamObserver(Team* t) { this->t = t; }
+};
+
+Team::Team(int n) {
+  team_num = n;
+  n_players = 0;
+  curr_index = 0;
+}
+
 class Game {
  private:
   int n_players;
   int n_teams;
+  int curr_index;
   vector<Team*> teams;
   vector<Player*> players;
 
  public:
   Game() {
+    curr_index = 0;
     cin >> n_players >> n_teams;
 
     for (int i = 1; i <= n_teams; i++) {
@@ -420,35 +443,8 @@ class Game {
     for (int i = 0; i < teams.size(); i++) teams[i]->checkDead();
   }
 
-  void Start() {
-    int t = 0;
-    while (!OneLeft()) {
-      if (!teams[t]->isDead()) {
-        Player* p = teams[t]->getCurrentPlayer();
-        if (p != nullptr) {
-          action(p);
-          if (OneLeft()) {
-            status();
-            break;
-          }
-
-          if (p->get_type() == PlayerType::zombie) {
-            action(p);
-            if (OneLeft()) {
-              status();
-              break;
-            }
-          }
-          debug_print("Finish Action");
-          status();
-        } else {
-          debug_print("Skip team");
-        }
-      }
-      t++;
-      if (t == teams.size()) t = 0;
-    }
-
+  void declareWinner() {
+    status();
     for (int i = 0; i < teams.size(); i++) {
       if (!teams[i]->isDead()) {
         cout << "Team " << i + 1 << " wins!" << endl;
@@ -456,7 +452,40 @@ class Game {
     }
   }
 
+  Player* getPlayer() {
+    while (true) {
+      if (!teams[curr_index]->isDead()) {
+        Player* p = teams[curr_index]->getCurrentPlayer();
+        if (p != nullptr) {
+          curr_index = (curr_index + 1) % n_teams;
+          return p;
+        }
+      }
+      curr_index = (curr_index + 1) % n_teams;
+    }
+    // cout << "NullTeam" << endl;
+    return nullptr;
+  }
+
+  void playerTurn(Player* p) {
+    for (int i = 0; i < p->getTurns(); i++) {
+      action(p);
+      if (OneLeft()) {
+        declareWinner();
+        return;
+      }
+    }
+    status();
+  }
+
+  void Start() {
+    while (!OneLeft()) {
+      Player* p = getPlayer();
+      playerTurn(p);
+    }
+  }
   void action(Player* p) {
+    // cout << "action" << endl;
     debug_print("action");
     string command;
     cin >> command;
