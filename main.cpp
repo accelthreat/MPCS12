@@ -76,9 +76,6 @@ enum class EventType {
 class IObserver {
  public:
   virtual void update(EventType type) = 0;
-
- protected:
-  EventType type;
 };
 
 class ISubject {
@@ -198,6 +195,7 @@ class Player : public Subject {
 
 class IPlayerObserver : public IObserver {
  protected:
+  EventType type;
   Player* p;
   IPlayerObserver(Player* p) { this->p = p; }
 };
