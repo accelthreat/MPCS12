@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -17,8 +18,10 @@ enum class Commands {
     Acknowledged = 'd',
     InputPlayerAction = 'e',
     GameOver = 'f',
-    Skipped = 'g',
-    NotSkipped = 'h'
+    PlayerSkippedStatus = 'g',
+    PlayerNotSkippedStatus = 'h',
+    TeamSkippedStatus = 'i',
+    TeamNotSkippedStatus = 'j'
 };
 
 char commandToChar(Commands c) {
@@ -128,9 +131,13 @@ class Game {
             if (!teams[curr_index]->isDead()) {
                 Player* p = teams[curr_index]->getCurrentPlayer();
                 if (p != nullptr) {
+                    server->onTeamFinishSkipping();
                     curr_index = (curr_index + 1) % n_teams;
                     currentPlayer = p;
                     return p;
+                } else {
+                    //Naskip yung team
+                    server->teamHasSkipped(curr_index);
                 }
             }
             curr_index = (curr_index + 1) % n_teams;
@@ -285,37 +292,6 @@ class Game {
         menu << "\n";
         return menu.str();
     }
-    void action(Player* p) {
-        debug_print("action");
-        string command;
-        cin >> command;
-        if (command == "tap") {
-            int tgt_p;
-            string l, tgt_l;
-            cin >> l >> tgt_p >> tgt_l;
-            attack(p, l, tgt_p, tgt_l);
-        } else {
-            string limb = command.substr(4, 4);
-            vector<int> params;
-            int index;
-            LimbType type;
-            if (limb == "feet") {
-                type = LimbType::FEET;
-                index = p->get_feet();
-            } else {
-                type = LimbType::HAND;
-                index = p->get_hands();
-            }
-            for (int i = 0; i < index; i++) {
-                int x;
-                cin >> x;
-                params.push_back(x);
-            }
-            p->distribute(params, type);
-        }
-        updateTeamStatus();
-    }
-
     void attack(Player* atk_player, string atk_limb, int tgt_p, string tgt_limb) {
         Player* tgt_player = players[tgt_p - 1];
         tgt_player->attacked(tgt_limb, atk_player->getLimbDigits(atk_limb));
@@ -368,6 +344,8 @@ class Server : public Common {
     socketstream listener;
     socketstream* clients;
     Game* game;
+    map<int, bool> playerSkipState;
+    map<int, bool> teamSkipState;
 
    public:
     Server(int port, int n) {
@@ -425,6 +403,11 @@ class Server : public Common {
         for (int i = 1; i < n; i++) {
             clients[i] << commandToChar(Commands::Acknowledged) << endl;
         }
+        for (int i = 0; i < n; i++) {
+            teamSkipState.insert(pair<int, bool>(i, false));
+            playerSkipState.insert(pair<int, bool>(i, false));
+        }
+
         game = new Game(this, teamNumbers, playerTypes);
         game->Start();
     }
@@ -454,7 +437,54 @@ class Server : public Common {
         }
     }
     void playerHasSkipped(int playerIndex) {
-        clients[playerIndex] << commandToChar(Commands::Skipped) << endl;
+        playerSkipState[playerIndex] = true;
+    }
+    void teamHasSkipped(int teamIndex) {
+        teamSkipState[teamIndex] = true;
+    }
+    void onTeamFinishSkipping() {
+        stringstream ss;
+        ss << "Team ";
+        for (int i = 0; i < n; i++) {
+            if (teamSkipState[i])
+                ss << i + 1;
+            if (i != n - 1)
+                ss << ",";
+        }
+        ss << "has skipped\n";
+        if (ss.str() != "Team ") {
+            cout << ss.str() << endl;
+            for (int i = 1; i < n; i++) {
+                clients[i] << commandToChar(Commands::TeamSkippedStatus) << endl;
+                clients[i] << ss.str();
+            }
+        } else {
+            for (int i = 1; i < n; i++) {
+                clients[i] << commandToChar(Commands::TeamNotSkippedStatus) << endl;
+            }
+        }
+    }
+    void onFinishSkipping() {
+        stringstream ss;
+        ss << "Player ";
+        for (int i = 0; i < n; i++) {
+            if (playerSkipState[i])
+                ss << i + 1;
+            if (i != n - 1)
+                ss << ",";
+        }
+        ss << "has skipped\n";
+        if (ss.str() != "Player ") {
+            cout << ss.str() << endl;
+            for (int i = 1; i < n; i++) {
+                clients[i] << commandToChar(Commands::PlayerSkippedStatus) << endl;
+                clients[i] << ss.str();
+            }
+        } else {
+            for (int i = 1; i < n; i++) {
+                clients[i] << commandToChar(Commands::PlayerNotSkippedStatus) << endl;
+            }
+        }
     }
     void declareWinner(int winner) {
         if (teamNumber == winner) {
@@ -514,14 +544,24 @@ class Client : public Common {
             cout << status << endl;
             server >> cmd;
             server.ignore();
-            if (charToCommand(cmd) == Commands::Skipped) {
-                cout << "You have been skipped" << endl;
-            } else {
-                //Di ka na skip, do nothing
+            if (charToCommand(cmd) == Commands::PlayerSkippedStatus) {
+                string skipstats;
+                getline(server, skipstats);
+                cout << skipstats << endl;
+            } else if (charToCommand(cmd) == Commands::PlayerNotSkippedStatus) {
+                //Do nothing
             }
-            string status;
-            getline(server, status);
-            cout << status << endl;
+            server >> cmd;
+            server.ignore();
+            if (charToCommand(cmd) == Commands::TeamSkippedStatus) {
+                string skipstats;
+                getline(server, skipstats);
+                cout << skipstats << endl;
+            } else if (charToCommand(cmd) == Commands::TeamNotSkippedStatus) {
+                //Do nothing
+            }
+            server >> cmd;
+            server.ignore();
             if (charToCommand(cmd) == Commands::InputPlayerAction) {
                 while (charToCommand(cmd) == Commands::InputPlayerAction) {
                     server >> cmd;

@@ -385,6 +385,7 @@ class Team {
         do {
             if (!players[index]->isDead()) {
                 if (!players[index]->turn_skip()) {
+                    onPlayerSkipDelegate->onFinishSkipping();
                     curr_index = (index + 1) % n_players;
                     return players[index];
                 } else {
@@ -429,6 +430,9 @@ class OnPlayerSkipDelegate {
     }
     void onPlayerSkip(int playerNumber) {
         server->playerHasSkipped(playerNumber);
+    }
+    void onFinishSkipping() {
+        server->finishSkipping();
     }
 };
 
