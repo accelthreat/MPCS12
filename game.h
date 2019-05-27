@@ -432,7 +432,7 @@ class OnPlayerSkipDelegate {
         server->playerHasSkipped(playerNumber);
     }
     void onFinishSkipping() {
-        server->finishSkipping();
+        server->onFinishSkipping();
     }
 };
 
