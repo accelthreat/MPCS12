@@ -10,18 +10,15 @@
 using namespace std;
 using namespace swoope;
 
-class ICommand {
-   public:
-    virtual void execute() = 0;
-};
-
 enum class Commands {
     InputPlayerType = 'a',
     InputTeamNumber = 'b',
     Standby = 'c',
     Acknowledged = 'd',
     InputPlayerAction = 'e',
-    GameOver = 'f'
+    GameOver = 'f',
+    Skipped = 'g',
+    NotSkipped = 'h'
 };
 
 char commandToChar(Commands c) {
@@ -95,7 +92,9 @@ class Game {
         for (int t = 0; t < n_teams; t++) {
             ss << teams[t]->getPrintableStatus() << "\n";
         }
-        ss << "\n";
+        //D: Displays the current player.
+        ss << "\nPlayer " << currentPlayer->get_ord();
+        ss << "of Team " << currentPlayer->getTeamNumber() << "\n";
         return ss.str();
     }
 
@@ -182,19 +181,33 @@ class Game {
             if (target_limb == nullptr || target_limb->isDead())
                 return false;
         } else if (command == "disthands") {
+            int allHands = currPlayer->get_hands();
+            int liveHands = currPlayer->getNumberOfLivingLimbs(LimbType::HAND);
+            int maxDigit = currPlayer->getHand(0)->getMaxDigits();
+            if (liveHands == 1) return false;
+
             vector<int> params;
-            int x;
+            int x, pos = 0, total1 = 0;
             while (ss >> x) {
+                if (x == maxDigit) return false;
                 params.push_back(x);
+                total1 += x;
             }
-            if (params.size() > currPlayer->getNumberOfLivingLimbs(LimbType::HAND))
-                return false;
-            for (int i = 0; i < params.size(); i++) {
-                //mali to
-                if (currPlayer->getHand(i)->get_digits() == params[i])
-                    return false;
+            int size = params.size();
+            if (size > liveHands) return false;
+
+            int total2 = 0, same = 0;
+            for (int i = 0; (i < allHands) && (pos < size); i++) {
+                Limb* hand = currPlayer->getHand(i);
+                if (!hand->isDead()) {
+                    int dgt = hand->get_digits();
+                    int dgt = hand->get_digits();
+                    total2 += dgt;
+                    if (params[pos++] == dgt) same++;
+                }
             }
-            if (currPlayer->getNumberOfLivingLimbs(LimbType::HAND) == 1)
+            if (same == liveHands) return false;
+            if (total1 != total2)
                 return false;
         } else {
             return false;
@@ -221,6 +234,57 @@ class Game {
         updateTeamStatus();
     }
 
+    //D: Possible series.
+    string possibleActions(int playerIdx) {
+        Player* actor = players[playerIdx];
+        stringstream main_menu;
+        main_menu << possibleTaps(actor);
+        main_menu << possibleDistH(actor) << "\n";
+        return main_menu.str();
+    }
+    string possibleTaps(Player* actor) {
+        int myTeam = actor->getTeamNumber();
+        stringstream menu;
+        menu << "Possible Taps:\n";
+        for (int i = 1; i <= n_teams; i++) {
+            if (i != myTeam) {
+                menu << "> Team " << i << ":\n";
+                int size = teams[i]->get_size();
+                for (int j = 0; j < size; j++) {
+                    Player* p = teams[i]->getPlayer(j);
+                    menu << " > Player " << p->get_ord() << "\n";
+
+                    menu << "     >> Hands:";
+                    int h = p->get_hands();
+                    for (int k = 0; k < h; k++) {
+                        menu << " " << (k + 1) << ":" << p->getHand(k)->get_digits();
+                    }
+
+                    menu << "\n    >> Feet: ";
+                    int f = p->get_feet();
+                    for (int k = 0; k < f; k++) {
+                        menu << " " << (k + 1) << ":" << p->getFoot(k)->get_digits();
+                    }
+                }
+                menu << "\n";
+            }
+        }
+        return menu.str();
+    }
+    string possibleDistH(Player* p) {
+        stringstream menu;
+        menu << "Living Hands:";
+        int h = p->get_hands();
+        for (int i = 0; i < h; i++) {
+            Limb* hand = p->getHand(i);
+            if (!hand->isDead())
+                menu << " " << hand->get_digits();
+            else
+                menu << " X";
+        }
+        menu << "\n";
+        return menu.str();
+    }
     void action(Player* p) {
         debug_print("action");
         string command;
@@ -366,13 +430,17 @@ class Server : public Common {
     }
     string getPlayerAction(int playerIndex) {
         string action;
+        //D: Menu to be displayed.
+        string menu = game->possibleActions(playerIndex);
         if (playerIndex == 0) {
             while (!game->verifyAction(playerIndex, action)) {
+                cout << menu;
                 getline(cin, action);
             }
         } else {
             while (!game->verifyAction(playerIndex, action)) {
                 clients[playerIndex] << commandToChar(Commands::InputPlayerAction) << endl;
+                clients[playerIndex] << menu << endl;
                 getline(clients[playerIndex], action);
             }
             clients[playerIndex] << commandToChar(Commands::Acknowledged) << endl;
@@ -384,6 +452,9 @@ class Server : public Common {
         for (int i = 1; i < n; i++) {
             clients[i] << status << endl;
         }
+    }
+    void playerHasSkipped(int playerIndex) {
+        clients[playerIndex] << commandToChar(Commands::Skipped) << endl;
     }
     void declareWinner(int winner) {
         if (teamNumber == winner) {
@@ -443,13 +514,26 @@ class Client : public Common {
             cout << status << endl;
             server >> cmd;
             server.ignore();
+            if (charToCommand(cmd) == Commands::Skipped) {
+                cout << "You have been skipped" << endl;
+            } else {
+                //Di ka na skip, do nothing
+            }
+            string status;
+            getline(server, status);
+            cout << status << endl;
             if (charToCommand(cmd) == Commands::InputPlayerAction) {
                 while (charToCommand(cmd) == Commands::InputPlayerAction) {
-                    string action;
-                    getline(cin, action);
-                    server << action << endl;
                     server >> cmd;
                     server.ignore();
+                    string action, menu;
+
+                    //D: receives menu to display.
+                    getline(server, menu);
+                    cout << menu << "\n";
+
+                    getline(cin, action);
+                    server << action << endl;
                 }
             } else if (charToCommand(cmd) == Commands::Standby) {
                 //Do nothing

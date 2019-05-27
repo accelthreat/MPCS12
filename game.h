@@ -74,7 +74,9 @@ enum class EventType {
     onAttacked,
     hasAttacked,
     hasAttackedDog,
-    onZombieHandDie
+    onZombieHandDie,
+    onPlayerSkip,
+    onTeamSkip
 };
 
 class IObserver {
@@ -135,6 +137,9 @@ class Player : public Subject {
     }
     Limb* getHand(int i) {
         return hands[i];
+    }
+    Limb* getFoot(int i) {
+        return feet[i];
     }
     int getTurns() { return turns; }
     int getTeamNumber() { return team; }
@@ -198,6 +203,8 @@ class Player : public Subject {
             if (!feet[i]->isDead()) digits = to_string(feet[i]->get_digits());
             ss << digits;
         }
+        //D: Adds another message if a player is skipped.
+        if (skip) ss << ":SKIP";
         ss << ")";
         return ss.str();
     }
@@ -338,13 +345,14 @@ class Doggo : public Player {
     }
 };
 
-class Team : public Subject {
+class Team {
    private:
     int team_num;
     int n_players;
     int curr_index;
     vector<Player*> players;
     bool dead = false;
+    OnPlayerSkipDelegate* onPlayerSkipDelegate;
 
    public:
     Team(int n);
@@ -352,6 +360,9 @@ class Team : public Subject {
     bool isDead() { return dead; }
     int get_size() { return n_players; }
 
+    void attachDelegate(OnPlayerSkipDelegate* onPlayerSkiprDelegate) {
+        this->onPlayerSkipDelegate = onPlayerSkipDelegate;
+    }
     void add_player(Player* p) {
         n_players++;
         players.push_back(p);
@@ -372,9 +383,13 @@ class Team : public Subject {
         int orig_index = curr_index;
         int index = curr_index;
         do {
-            if (!players[index]->turn_skip() && !players[index]->isDead()) {
-                curr_index = (index + 1) % n_players;
-                return players[index];
+            if (!players[index]->isDead()) {
+                if (!players[index]->turn_skip()) {
+                    curr_index = (index + 1) % n_players;
+                    return players[index];
+                } else {
+                    onPlayerSkipDelegate->onPlayerSkip(players[index]->get_ord());
+                }
             }
             index = (index + 1) % n_players;
         } while (index != orig_index);
@@ -388,6 +403,8 @@ class Team : public Subject {
         stringstream ss;
         ss << "Team " << team_num << ": ";
         for (int i = 0; i < players.size(); i++) {
+            //D: '>>' Signifies team's next player.
+            if (i == curr_index) ss << ">>";
             ss << players[i]->getPrintableStatus();
             if (i != players.size() - 1) ss << " | ";
         }
@@ -399,6 +416,20 @@ class ITeamObserver : public IObserver {
    protected:
     Team* t;
     ITeamObserver(Team* t) { this->t = t; }
+};
+
+class OnPlayerSkipDelegate {
+    Server* server;
+    Team* t;
+
+   public:
+    OnPlayerSkipDelegate(Team* t, Server* server) {
+        this->t = t;
+        this->server = server;
+    }
+    void onPlayerSkip(int playerNumber) {
+        server->playerHasSkipped(playerNumber);
+    }
 };
 
 Team::Team(int n) {
