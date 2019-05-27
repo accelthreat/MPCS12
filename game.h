@@ -118,6 +118,24 @@ class Player : public Subject {
         team = p_team;
         order = p_order;
     }
+    int getNumberOfLivingLimbs(LimbType type) {
+        int counter = 0;
+        if (type == LimbType::HAND) {
+            for (int i = 0; i < hands.size(); i++) {
+                if (!hands[i]->isDead())
+                    counter++;
+            }
+        } else if (type == LimbType::FEET) {
+            for (int i = 0; i < hands.size(); i++) {
+                if (!hands[i]->isDead())
+                    counter++;
+            }
+        }
+        return counter;
+    }
+    Limb* getHand(int i) {
+        return hands[i];
+    }
     int getTurns() { return turns; }
     int getTeamNumber() { return team; }
     int get_ord() { return order; }
@@ -127,9 +145,14 @@ class Player : public Subject {
     void skipTurn() { skip = true; }
     bool ready() { return !skip && !isDead(); }
     void distribute(vector<int> params, LimbType limbType) {
+        int limbCounter = 0;
         if (limbType == LimbType::HAND) {
             for (int i = 0; i < hands.size(); i++) {
-                hands[i]->set_digits(params[i]);
+                while (hands[limbCounter]->isDead()) {
+                    limbCounter++;
+                }
+                hands[limbCounter]->set_digits(params[i]);
+                limbCounter++;
             }
         } else if (limbType == LimbType::FEET) {
             for (int i = 0; i < feet.size(); i++) {
@@ -190,8 +213,10 @@ class Player : public Subject {
         int i = limb[1] - 65;
         if (l == 'H') {
             return hands[i];
-        } else {
+        } else if (l == 'F') {
             return feet[i];
+        } else {
+            return nullptr;
         }
     }
 };
@@ -382,159 +407,8 @@ Team::Team(int n) {
     curr_index = 0;
 }
 
-class Game {
-   private:
-    int n_players;
-    int n_teams;
-    int curr_index;
-    vector<Team*> teams;
-    vector<Player*> players;
-
-   public:
-    Game() {
-        curr_index = 0;
-        cin >> n_players >> n_teams;
-
-        for (int i = 1; i <= n_teams; i++) {
-            Team* t = new Team(i);
-            teams.push_back(t);
-        }
-
-        for (int i = 0; i < n_players; i++) {
-            int p_team;
-            string p_type;
-            cin >> p_type >> p_team;
-            Player* p = create_player(p_type, p_team, i + 1);
-            teams[p_team - 1]->add_player(p);
-            players.push_back(p);
-        }
-    }
-
-    Game(vector<int> teamNumbers, vector<string> playerTypes) {
-        n_teams = unordered_set<int>(teamNumbers.begin(), teamNumbers.end()).size();
-        for (int i = 1; i <= n_teams; i++) {
-            Team* t = new Team(i);
-            teams.push_back(t);
-        }
-        n_players = playerTypes.size();
-        for (int i = 0; i < n_players; i++) {
-            Player* p = create_player(playerTypes[i], teamNumbers[i], i + 1);
-            teams[teamNumbers[i] - 1]->add_player(p);
-            players.push_back(p);
-        }
-    }
-
-    Player* create_player(string type, int team, int num) {
-        Player* p;
-        if (type == "human")
-            p = new Human(team, num);
-        else if (type == "alien")
-            p = new Alien(team, num);
-        else if (type == "doggo")
-            p = new Doggo(team, num);
-        else if (type == "zombie")
-            p = new Zombie(team, num);
-        return p;
-    }
-
-    void status() {
-        for (int t = 0; t < n_teams; t++) {
-            cout << teams[t]->getPrintableStatus() << "\n";
-        }
-        cout << "\n";
-    }
-
-    bool OneLeft() {
-        int counter = 0;
-        for (int i = 0; i < teams.size(); i++) {
-            if (!teams[i]->isDead()) counter++;
-        }
-        return counter == 1;
-    }
-
-    void updateTeamStatus() {
-        for (int i = 0; i < teams.size(); i++) teams[i]->checkDead();
-    }
-
-    void declareWinner() {
-        status();
-        for (int i = 0; i < teams.size(); i++) {
-            if (!teams[i]->isDead()) {
-                cout << "Team " << i + 1 << " wins!" << endl;
-            }
-        }
-    }
-
-    Player* getPlayer() {
-        while (true) {
-            if (!teams[curr_index]->isDead()) {
-                Player* p = teams[curr_index]->getCurrentPlayer();
-                if (p != nullptr) {
-                    curr_index = (curr_index + 1) % n_teams;
-                    return p;
-                }
-            }
-            curr_index = (curr_index + 1) % n_teams;
-        }
-        // cout << "NullTeam" << endl;
-        return nullptr;
-    }
-
-    void playerTurn(Player* p) {
-        for (int i = 0; i < p->getTurns(); i++) {
-            action(p);
-            if (OneLeft()) {
-                declareWinner();
-                return;
-            }
-        }
-        status();
-    }
-
-    void Start() {
-        status();
-        while (!OneLeft()) {
-            Player* p = getPlayer();
-            playerTurn(p);
-        }
-    }
-    void action(Player* p) {
-        // cout << "action" << endl;
-        debug_print("action");
-        string command;
-        cin >> command;
-        if (command == "tap") {
-            int tgt_p;
-            string l, tgt_l;
-            cin >> l >> tgt_p >> tgt_l;
-            attack(p, l, tgt_p, tgt_l);
-        } else {
-            string limb = command.substr(4, 4);
-            vector<int> params;
-            int index;
-            LimbType type;
-            if (limb == "feet") {
-                type = LimbType::FEET;
-                index = p->get_feet();
-            } else {
-                type = LimbType::HAND;
-                index = p->get_hands();
-            }
-            for (int i = 0; i < index; i++) {
-                int x;
-                cin >> x;
-                params.push_back(x);
-            }
-            p->distribute(params, type);
-        }
-        updateTeamStatus();
-    }
-
-    void attack(Player* atk_player, string atk_limb, int tgt_p, string tgt_limb) {
-        Player* tgt_player = players[tgt_p - 1];
-        tgt_player->attacked(tgt_limb, atk_player->getLimbDigits(atk_limb));
-        atk_player->notify(EventType::hasAttacked);
-        if (tgt_player->get_type() == PlayerType::dog)
-            atk_player->notify(EventType::hasAttackedDog);
-    }
+class IGameObserver {
+   protected:
+    Game* g;
+    IGameObserver(Game* g) { this->g = g; }
 };
