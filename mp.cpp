@@ -149,6 +149,7 @@ class Game {
       teams[teamNumbers[i] - 1]->add_player(p);
       players.push_back(p);
     }
+    currentPlayer = players[0];
   }
 
   Player* create_player(string type, int team, int num) {
@@ -234,6 +235,7 @@ class Game {
   }
 
   void Start() {
+    cout << "START()" << endl;
     // cout << status();
     server->broadcastStatus(status());
     while (!OneLeft()) {
@@ -475,7 +477,7 @@ class Server : public Common, public IServer {
         int t;
         clients[i] >> t;
         clients[i].ignore();
-        cout<<"Received team number "<<t<<endl;
+        cout << "Received team number " << t << endl;
         teamNumbers.push_back(t);
       }
     }
@@ -489,7 +491,7 @@ class Server : public Common, public IServer {
     }
 
     game = new Game(this, teamNumbers, playerTypes);
-    cout<<"GAME START"<<endl;
+    cout << "GAME START" << endl;
     game->Start();
   }
   string getPlayerAction(int playerIndex) {
