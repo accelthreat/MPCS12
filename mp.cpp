@@ -34,6 +34,8 @@ bool validateIP(string s) {
   for (int i = 0; i < 4; i++) {
     if (!validateIntString(arr[i])) return false;
     int n = stoi(arr[i]);
+    if (i == 0)
+      if (n < 1 || n > 255) return false;
     if (n < 0 || n > 255) return false;
   }
   return true;
@@ -290,6 +292,7 @@ class Game {
       int tgt_player;
       string limb, tgt_limb;
       ss >> limb >> tgt_player >> tgt_limb;
+      if (tgt_player < 1 || tgt_player > players.size()) return false;
       Player* target = players[tgt_player - 1];
       if (target->getTeamNumber() == currPlayer->getTeamNumber()) return false;
       if (target->isDead()) return false;
@@ -490,6 +493,10 @@ class Server : public Common, public IServer {
   }
   bool validTeamNumber(vector<int> teamNumbers) {
     if (teamNumbers.empty()) return false;
+    if (unordered_set<int>(teamNumbers.begin(), teamNumbers.end()).size() < 2) {
+      return false;
+    }
+
     int last_team = 0;
     int s = teamNumbers.size();
     int* emptyCheck = new int[s + 1];
