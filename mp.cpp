@@ -418,9 +418,10 @@ class Server : public Common, public IServer {
     this->n = n;
   }
   bool validTeamNumber(vector<int> teamNumbers) {
+    if (teamNumbers.empty()) return false;
     int last_team = 0;
     int s = teamNumbers.size();
-    int* emptyCheck = new int(s + 1);
+    int* emptyCheck = new int[s + 1];
     fill_n(emptyCheck, s + 1, 0);
     for (int i = 0; i < s; i++) {
       int team = teamNumbers[i];
@@ -428,8 +429,12 @@ class Server : public Common, public IServer {
       if (last_team < team) last_team = team;
     }
     for (int i = 1; i <= last_team; i++) {
-      if (emptyCheck[i] == 0) return false;
+      if (emptyCheck[i] == 0) {
+        delete[] emptyCheck;
+        return false;
+      }
     }
+    delete[] emptyCheck;
     return true;
   }
   void initialize() {
@@ -445,6 +450,7 @@ class Server : public Common, public IServer {
       cout << "Waiting for P" << (i + 1) << "...\n";
       listener.accept(clients[i]);
       clients[i] << i << endl;
+      clients[i] << n << endl;
       cout << "P" << (i + 1) << " ready.\n";
     }
     for (int i = 1; i < n; i++) {
@@ -456,9 +462,12 @@ class Server : public Common, public IServer {
       clients[i] << commandToChar(Commands::InputPlayerType) << endl;
       string s;
       getline(clients[i], s);
+      cout << "Received " << s << endl;
       playerTypes.push_back(s);
     }
     while (!validTeamNumber(teamNumbers)) {
+      cout << "ENTER LOOP" << endl;
+      teamNumbers.clear();
       inputTeamNumber();
       teamNumbers.push_back(this->teamNumber);
       for (int i = 1; i < n; i++) {
@@ -466,10 +475,12 @@ class Server : public Common, public IServer {
         int t;
         clients[i] >> t;
         clients[i].ignore();
+        cout<<"Received team number "<<t<<endl;
         teamNumbers.push_back(t);
       }
     }
     for (int i = 1; i < n; i++) {
+      cout << "ACK" << endl;
       clients[i] << commandToChar(Commands::Acknowledged) << endl;
     }
     for (int i = 0; i < n; i++) {
@@ -478,6 +489,7 @@ class Server : public Common, public IServer {
     }
 
     game = new Game(this, teamNumbers, playerTypes);
+    cout<<"GAME START"<<endl;
     game->Start();
   }
   string getPlayerAction(int playerIndex) {
@@ -580,6 +592,8 @@ class Client : public Common {
     // if (!server.good()) return false;
     server >> playerNumber;
     server.ignore();
+    server >> n;
+    server.ignore();
     cout << "Your player number is: " << playerNumber + 1 << endl;
     int ready = 0;
     cout << "Waiting for other players" << endl;
@@ -593,14 +607,18 @@ class Client : public Common {
       server << playerType << endl;
     }
     while (charToCommand(cmd) != Commands::Acknowledged) {
+      cout << "waiting for input team number" << endl;
       server >> cmd;
       server.ignore();
       if (charToCommand(cmd) == Commands::InputTeamNumber) {
         inputTeamNumber();
-        server << playerType << endl;
+        server << teamNumber << endl;
+      } else if (charToCommand(cmd) == Commands::Acknowledged) {
+        break;
       }
     }
     while (true) {
+      cout << "ENTER LOOP" << endl;
       string status;
       getline(server, status);
       cout << status << endl;
