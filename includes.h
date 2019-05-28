@@ -70,7 +70,6 @@ enum class EventType {
   onAttacked,
   hasAttacked,
   hasAttackedDog,
-  onZombieHandDie,
   onPlayerSkip,
   onTeamSkip
 };
@@ -143,22 +142,20 @@ class Player : public Subject {
     int limbCounter = 0;
     if (limbType == LimbType::HAND) {
       for (int i = 0; i < hands.size(); i++) {
-        while (hands[limbCounter]->isDead()) {
-          limbCounter++;
-        }
-        hands[limbCounter]->set_digits(params[i]);
-        limbCounter++;
+        Limb* hand = hands[i];
+        if (!hand->isDead()) hand->set_digits(params[limbCounter++]);
       }
     } else if (limbType == LimbType::FEET) {
       for (int i = 0; i < feet.size(); i++) {
-        feet[i]->set_digits(params[i]);
+        Limb* foot = feet[i];
+        if (!foot->isDead()) foot->set_digits(params[limbCounter++]);
       }
     }
   }
 
   int getLimbDigits(string limb) { return limb_ptr(limb)->get_digits(); }
 
-  void attacked(string tgt_limb, int add) {
+  virtual void attacked(string tgt_limb, int add) {
     Limb* l = limb_ptr(tgt_limb);
     l->attacked(add);
     if (dynamic_cast<Foot*>(l) != nullptr && l->isDead())
@@ -209,8 +206,10 @@ class Player : public Subject {
     char l = limb[0];
     int i = limb[1] - 65;
     if (l == 'H') {
+      if (type == PlayerType::dog) return nullptr;
       return hands[i];
     } else if (l == 'F') {
+      if (type == PlayerType::zombie) return nullptr;
       return feet[i];
     } else {
       return nullptr;
@@ -293,22 +292,13 @@ class Zombie : public Player {
     hands.push_back(h2);
     hasRegenerated = true;
   }
-};
-
-class OnZombieHandDie : public IPlayerObserver {
- public:
-  OnZombieHandDie(Player* p) : IPlayerObserver(p) {
-    type = EventType::onAttacked;
-  }
-  void update(EventType type) {
-    if (this->type == type) {
-      if (p->get_type() == PlayerType::zombie &&
-          p->getLimbDigits("HA") == p->limb_ptr("HA")->getMaxDigits()) {
-        Zombie* z = static_cast<Zombie*>(p);
-        z->regenerate();
-        z->detach(this);
-      }
-    }
+  void attacked(string tgt_limb, int add) {
+    Limb* l = limb_ptr(tgt_limb);
+    l->attacked(add);
+    if (l->isDead() && !hasRegenerated) regenerate();
+    if (dynamic_cast<Foot*>(l) != nullptr && l->isDead())
+      notify(EventType::onFootDie);
+    notify(EventType::onAttacked);
   }
 };
 
@@ -316,7 +306,6 @@ Zombie::Zombie(int p_team, int p_order) : Player(p_team, p_order) {
   turns = 2;
   type = PlayerType::zombie;
   attach(new OnTapDog(this));
-  attach(new OnZombieHandDie(this));
   Limb* h1 = new Hand(4);
 
   hands.push_back(h1);

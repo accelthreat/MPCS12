@@ -11,6 +11,34 @@
 using namespace std;
 using namespace swoope;
 
+bool validateIntString(string s) {
+  int n;
+  try {
+    n = stoi(s);
+  } catch (exception e) {
+    return false;
+  }
+  return true;
+}
+
+bool validateIP(string s) {
+  if (s == "localhost") return true;
+  size_t n = std::count(s.begin(), s.end(), '.');
+  if (n != 3) return false;
+  stringstream ss(s);
+  string tk;
+  vector<string> arr;
+  while (getline(ss, tk, '.')) {
+    arr.push_back(tk);
+  }
+  for (int i = 0; i < 4; i++) {
+    if (!validateIntString(arr[i])) return false;
+    int n = stoi(arr[i]);
+    if (n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
 enum class Commands {
   InputPlayerType = 'a',
   InputTeamNumber = 'b',
@@ -37,6 +65,8 @@ class IServer {
   virtual string getPlayerAction(int playerIndex) = 0;
   virtual void teamHasSkipped(int teamIndex) = 0;
   virtual void declareWinner(int winner) = 0;
+  virtual void broadcastStandby(int playerIndex) = 0;
+  virtual void acknowledge(int playerIndex) = 0;
 };
 
 class OnPlayerSkipDelegate {
@@ -94,7 +124,7 @@ class Team {
           curr_index = (index + 1) % n_players;
           return players[index];
         } else {
-          onPlayerSkipDelegate->onPlayerSkip(players[index]->get_ord());
+          onPlayerSkipDelegate->onPlayerSkip(players[index]->get_ord() - 1);
         }
       }
       index = (index + 1) % n_players;
@@ -149,6 +179,7 @@ class Game {
       teams[teamNumbers[i] - 1]->add_player(p);
       players.push_back(p);
     }
+    curr_index = 0;
     currentPlayer = players[0];
   }
 
@@ -168,11 +199,11 @@ class Game {
   string status() {
     stringstream ss;
     for (int t = 0; t < n_teams; t++) {
-      ss << teams[t]->getPrintableStatus() << "\n";
+      ss << teams[t]->getPrintableStatus() << ";";
     }
     // D: Displays the current player.
-    ss << "\nPlayer " << currentPlayer->get_ord();
-    ss << " of Team " << currentPlayer->getTeamNumber() << "'s turn\n";
+    ss << ";Player " << currentPlayer->get_ord() << " of Team "
+       << currentPlayer->getTeamNumber() << "'s turn;";
     return ss.str();
   }
 
@@ -222,22 +253,29 @@ class Game {
   }
 
   void playerTurn(Player* p) {
+    server->broadcastStatus(status());
+    int playerIndex = p->get_ord() - 1;
+
     for (int i = 0; i < p->getTurns(); i++) {
-      string act = server->getPlayerAction(p->get_ord());
+      // cout << "Player Type " << playerTypeToString(p->get_type()) << endl;
+
+      string act = server->getPlayerAction(playerIndex);
+
       action(p, act);
       if (OneLeft()) {
         declareWinner();
         return;
       }
     }
+    server->broadcastStandby(playerIndex);
+    server->acknowledge(playerIndex);
     // cout << status();
-    server->broadcastStatus(status());
   }
 
   void Start() {
     cout << "START()" << endl;
     // cout << status();
-    server->broadcastStatus(status());
+    // server->broadcastStatus(status());
     while (!OneLeft()) {
       Player* p = getPlayer();
       playerTurn(p);
@@ -259,6 +297,7 @@ class Game {
       Limb* target_limb = target->limb_ptr(tgt_limb);
       if (attack_limb == nullptr || attack_limb->isDead()) return false;
       if (target_limb == nullptr || target_limb->isDead()) return false;
+      if (attack_limb->get_digits() == 0) return false;
     } else if (command == "disthands") {
       int allHands = currPlayer->get_hands();
       int liveHands = currPlayer->getNumberOfLivingLimbs(LimbType::HAND);
@@ -268,7 +307,7 @@ class Game {
       vector<int> params;
       int x, pos = 0, total1 = 0;
       while (ss >> x) {
-        if (x == maxDigit) return false;
+        if (x >= maxDigit) return false;
         params.push_back(x);
         total1 += x;
       }
@@ -316,31 +355,42 @@ class Game {
     Player* actor = players[playerIdx];
     stringstream main_menu;
     main_menu << possibleTaps(actor);
-    main_menu << possibleDistH(actor) << "\n";
+    main_menu << possibleDistH(actor);
+    main_menu << possibleDistF(actor);
     return main_menu.str();
   }
   string possibleTaps(Player* actor) {
     int myTeam = actor->getTeamNumber();
     stringstream menu;
     menu << "Possible Taps:\n";
-    for (int i = 1; i <= n_teams; i++) {
-      if (i != myTeam) {
-        menu << "> Team " << i << ":\n";
+    for (int i = 0; i < n_teams; i++) {
+      if (i + 1 != myTeam) {
+        menu << "> Team " << (i + 1) << ":\n";
         int size = teams[i]->get_size();
         for (int j = 0; j < size; j++) {
           Player* p = teams[i]->getPlayer(j);
           menu << " > Player " << p->get_ord() << "\n";
-
           menu << "     >> Hands:";
           int h = p->get_hands();
+          int hMax = p->getHand(0)->getMaxDigits();
           for (int k = 0; k < h; k++) {
-            menu << " " << (k + 1) << ":" << p->getHand(k)->get_digits();
+            int d = p->getHand(k)->get_digits();
+            menu << " " << (k + 1) << ":";
+            if (d == hMax)
+              menu << "X";
+            else
+              menu << d;
           }
-
-          menu << "\n    >> Feet: ";
+          menu << "\n     >> Feet: ";
           int f = p->get_feet();
+          int fMax = p->getFoot(0)->getMaxDigits();
           for (int k = 0; k < f; k++) {
-            menu << " " << (k + 1) << ":" << p->getFoot(k)->get_digits();
+            int d = p->getFoot(k)->get_digits();
+            menu << " " << (k + 1) << ":";
+            if (d == fMax)
+              menu << "X";
+            else
+              menu << d;
           }
         }
         menu << "\n";
@@ -350,12 +400,26 @@ class Game {
   }
   string possibleDistH(Player* p) {
     stringstream menu;
-    menu << "Living Hands:";
+    menu << "Your Hands:";
     int h = p->get_hands();
     for (int i = 0; i < h; i++) {
       Limb* hand = p->getHand(i);
       if (!hand->isDead())
         menu << " " << hand->get_digits();
+      else
+        menu << " X";
+    }
+    menu << "\n";
+    return menu.str();
+  }
+  string possibleDistF(Player* p) {
+    stringstream menu;
+    menu << "Your Feet: ";
+    int f = p->get_feet();
+    for (int i = 0; i < f; i++) {
+      Limb* foot = p->getFoot(i);
+      if (!foot->isDead())
+        menu << " " << foot->get_digits();
       else
         menu << " X";
     }
@@ -389,7 +453,7 @@ class Common {
   }
   void inputPlayerType() {
     cout << "Ready" << endl;
-    while (!cin.good() || !validPlayerType(playerType)) {
+    while (!validPlayerType(playerType)) {
       cout << "Pick a player type: " << endl;
       cout << "human" << endl
            << "alien" << endl
@@ -399,9 +463,11 @@ class Common {
     }
   }
   void inputTeamNumber() {
-    while (!cin.good() || teamNumber < 1 || teamNumber > n) {
+    string x;
+    while (!validateIntString(x) || teamNumber < 1 || teamNumber > n) {
       cout << "Input your team number from 1-" << n << endl;
-      cin >> teamNumber;
+      getline(cin, x);
+      if (validateIntString(x)) teamNumber = stoi(x);
     }
   }
 };
@@ -418,6 +484,9 @@ class Server : public Common, public IServer {
   Server(string port, int n) {
     this->port = port;
     this->n = n;
+  }
+  void acknowledge(int playerIndex) {
+    clients[playerIndex] << commandToChar(Commands::Standby) << endl;
   }
   bool validTeamNumber(vector<int> teamNumbers) {
     if (teamNumbers.empty()) return false;
@@ -494,28 +563,42 @@ class Server : public Common, public IServer {
     cout << "GAME START" << endl;
     game->Start();
   }
+  void broadcastStandby(int playerIndex) {
+    for (int i = 1; i < n; i++) {
+      if (i != playerIndex)
+        clients[i] << commandToChar(Commands::Standby) << endl;
+    }
+  }
   string getPlayerAction(int playerIndex) {
     string action;
     // D: Menu to be displayed.
-    string menu = game->possibleActions(playerIndex);
+    // string menu = game->possibleActions(playerIndex);  // Changed
+    cout << "PlayerAction " << playerIndex << endl;
     if (playerIndex == 0) {
       while (!game->verifyAction(playerIndex, action)) {
-        cout << menu;
+        // cout << menu;  // Changed
+        cout << "Enter your action" << endl;
         getline(cin, action);
+        cout << "You have entered " << action << endl;
       }
     } else {
+      // clients[playerIndex] << commandToChar(Commands::InputPlayerAction)
+      //                      << endl;
       while (!game->verifyAction(playerIndex, action)) {
         clients[playerIndex] << commandToChar(Commands::InputPlayerAction)
                              << endl;
-        clients[playerIndex] << menu << endl;
+        cout << "Sending InputPlayerCommand" << endl;
+        // clients[playerIndex] << menu << endl;  // Changed
         getline(clients[playerIndex], action);
       }
-      clients[playerIndex] << commandToChar(Commands::Acknowledged) << endl;
+      // clients[playerIndex] << commandToChar(Commands::Acknowledged) << endl;
     }
+
     return action;
   }
   void broadcastStatus(string status) {
-    cout << status;
+    cout << "Displaying Status" << endl;
+    cout << status << endl;
     for (int i = 1; i < n; i++) {
       clients[i] << status << endl;
     }
@@ -534,18 +617,20 @@ class Server : public Common, public IServer {
         ss << i + 1 << " ";
       }
     }
-    ss << "has skipped\n";
+    ss << "has skipped;";
+    cout << "Sending TeamSkippedStatus" << endl;
     if (nTeamSkips > 0) {
       cout << ss.str() << endl;
       for (int i = 1; i < n; i++) {
         clients[i] << commandToChar(Commands::TeamSkippedStatus) << endl;
-        clients[i] << ss.str();
+        clients[i] << ss.str() << endl;
       }
     } else {
       for (int i = 1; i < n; i++) {
         clients[i] << commandToChar(Commands::TeamNotSkippedStatus) << endl;
       }
     }
+    for (int i = 0; i < n; i++) teamSkipState[i] = false;
   }
   void onFinishSkipping() {
     stringstream ss;
@@ -557,18 +642,20 @@ class Server : public Common, public IServer {
         ss << i + 1 << " ";
       }
     }
-    ss << "has skipped\n";
+    ss << "has skipped;";
+    cout << "Sending PlayerSkippedStatus" << endl;
     if (nPlayerSkips > 0) {
       cout << ss.str() << endl;
       for (int i = 1; i < n; i++) {
         clients[i] << commandToChar(Commands::PlayerSkippedStatus) << endl;
-        clients[i] << ss.str();
+        clients[i] << ss.str() << endl;
       }
     } else {
       for (int i = 1; i < n; i++) {
         clients[i] << commandToChar(Commands::PlayerNotSkippedStatus) << endl;
       }
     }
+    for (int i = 0; i < n; i++) playerSkipState[i] = false;
   }
   void declareWinner(int winner) {
     if (teamNumber == winner) {
@@ -597,7 +684,7 @@ class Client : public Common {
   void initialize() {
     char cmd;
     server.open(ip, port);
-    // if (!server.good()) return false;
+    // if (!server.good()) return;
     server >> playerNumber;
     server.ignore();
     server >> n;
@@ -627,11 +714,10 @@ class Client : public Common {
     }
     while (true) {
       cout << "ENTER LOOP" << endl;
-      string status;
-      getline(server, status);
-      cout << status << endl;
+
       server >> cmd;
       server.ignore();
+      cout << "Received command for PlayerSkipped " << cmd << endl;
       if (charToCommand(cmd) == Commands::PlayerSkippedStatus) {
         string skipstats;
         getline(server, skipstats);
@@ -641,6 +727,7 @@ class Client : public Common {
       }
       server >> cmd;
       server.ignore();
+      cout << "Received command for TeamSkipped " << cmd << endl;
       if (charToCommand(cmd) == Commands::TeamSkippedStatus) {
         string skipstats;
         getline(server, skipstats);
@@ -648,22 +735,29 @@ class Client : public Common {
       } else if (charToCommand(cmd) == Commands::TeamNotSkippedStatus) {
         // Do nothing
       }
+      string status;
+      getline(server, status);
+      cout << "Displaying status" << endl;
+      cout << status << endl;
+      cmd = 'z';
       server >> cmd;
       server.ignore();
+      cout << "Cmd " << cmd << endl;
       if (charToCommand(cmd) == Commands::InputPlayerAction) {
         while (charToCommand(cmd) == Commands::InputPlayerAction) {
+          string action, menu;
+          cout << "Enter your valid action" << endl;
+          // D: receives menu to display.
+          // getline(server, menu);
+          // cout << menu << "\n";
+          getline(cin, action);
+          cout << "You have entered " << action << endl;
+          server << action << endl;
           server >> cmd;
           server.ignore();
-          string action, menu;
-
-          // D: receives menu to display.
-          getline(server, menu);
-          cout << menu << "\n";
-
-          getline(cin, action);
-          server << action << endl;
         }
       } else if (charToCommand(cmd) == Commands::Standby) {
+        cout << "Standby" << endl;
         // Do nothing
       } else if (charToCommand(cmd) == Commands::GameOver) {
         int winner;
@@ -681,6 +775,17 @@ class Client : public Common {
   }
 };
 
+bool nValidate(string ns) {
+  int n;
+  try {
+    n = stoi(ns);
+  } catch (exception e) {
+    return false;
+  }
+  if (n < 2 || n > 6) return false;
+  return true;
+}
+
 int main(int argc, char* argv[]) {
   if (argc == 1) {
     cout << "Error No args found" << endl;
@@ -694,21 +799,18 @@ int main(int argc, char* argv[]) {
   }
   string port = to_string(p);
   if (argc == 2) {
-    int n;
-    while (!cin.good() || n < 2 || n > 6) {
-      cout << "Enter the number of player between 2-6" << endl;
-      cin >> n;
-      cin.ignore();
+    string ns;
+    while (!nValidate(ns)) {
+      cout << "Enter the integer number of player between 2-6" << endl;
+      getline(cin, ns);
     }
+    int n = stoi(ns);
     Server* server = new Server(port, n);
     server->initialize();
   } else if (argc == 3) {
     string ip = argv[2];
+    if (!validateIP(ip)) return 0;
     Client* client = new Client(port, ip);
     client->initialize();
-    // if (!client->initialize()) {
-    //   cout << "ERROR: IP INVALID" << endl;
-    //   return 0;
-    // }
   }
 }
