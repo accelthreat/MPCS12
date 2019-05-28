@@ -8,8 +8,20 @@
 #include "includes.h"
 #include "socketstream/socketstream.hh"
 
+//#define DEBUG
+#ifdef DEBUG
+#define D(x) x
+#else
+#define D(x)
+#endif
+
 using namespace std;
 using namespace swoope;
+
+string convertSCToNL(string s) {
+  replace(s.begin(), s.end(), ';', '\n');
+  return s;
+}
 
 bool validateIntString(string s) {
   int n;
@@ -131,7 +143,6 @@ class Team {
       }
       index = (index + 1) % n_players;
     } while (index != orig_index);
-    debug_print("Null");
     // cout << "NullPlayer" << endl;
     // Team has no ready players
     return nullptr;
@@ -142,7 +153,10 @@ class Team {
     ss << "Team " << team_num << ": ";
     for (int i = 0; i < players.size(); i++) {
       // D: '>>' Signifies team's next player.
-      if (i == curr_index) ss << ">>";
+      if (players[i]->isDead())
+        ss << "X";
+      else if (i == curr_index)
+        ss << ">>";
       ss << players[i]->getPrintableStatus();
       if (i != players.size() - 1) ss << " | ";
     }
@@ -204,7 +218,7 @@ class Game {
       ss << teams[t]->getPrintableStatus() << ";";
     }
     // D: Displays the current player.
-    ss << ";Player " << currentPlayer->get_ord() << " of Team "
+    ss << "Player " << currentPlayer->get_ord() << " of Team "
        << currentPlayer->getTeamNumber() << "'s turn;";
     return ss.str();
   }
@@ -540,11 +554,11 @@ class Server : public Common, public IServer {
       clients[i] << commandToChar(Commands::InputPlayerType) << endl;
       string s;
       getline(clients[i], s);
-      cout << "Received " << s << endl;
+      D(cout << "Received " << s << endl;)
       playerTypes.push_back(s);
     }
     while (!validTeamNumber(teamNumbers)) {
-      cout << "ENTER LOOP" << endl;
+      D(cout << "ENTER LOOP" << endl;)
       teamNumbers.clear();
       inputTeamNumber();
       teamNumbers.push_back(this->teamNumber);
@@ -553,12 +567,12 @@ class Server : public Common, public IServer {
         int t;
         clients[i] >> t;
         clients[i].ignore();
-        cout << "Received team number " << t << endl;
+        D(cout << "Received team number " << t << endl;)
         teamNumbers.push_back(t);
       }
     }
     for (int i = 1; i < n; i++) {
-      cout << "ACK" << endl;
+      D(cout << "ACK" << endl;)
       clients[i] << commandToChar(Commands::Acknowledged) << endl;
     }
     for (int i = 0; i < n; i++) {
@@ -567,7 +581,7 @@ class Server : public Common, public IServer {
     }
 
     game = new Game(this, teamNumbers, playerTypes);
-    cout << "GAME START" << endl;
+    D(cout << "GAME START" << endl;)
     game->Start();
   }
   void broadcastStandby(int playerIndex) {
@@ -580,13 +594,13 @@ class Server : public Common, public IServer {
     string action;
     // D: Menu to be displayed.
     // string menu = game->possibleActions(playerIndex);  // Changed
-    cout << "PlayerAction " << playerIndex << endl;
+    D(cout << "PlayerAction " << playerIndex << endl;)
     if (playerIndex == 0) {
       while (!game->verifyAction(playerIndex, action)) {
         // cout << menu;  // Changed
-        cout << "Enter your action" << endl;
+        cout << "Enter a valid move" << endl;
         getline(cin, action);
-        cout << "You have entered " << action << endl;
+        D(cout << "You have entered " << action << endl;)
       }
     } else {
       // clients[playerIndex] << commandToChar(Commands::InputPlayerAction)
@@ -594,7 +608,7 @@ class Server : public Common, public IServer {
       while (!game->verifyAction(playerIndex, action)) {
         clients[playerIndex] << commandToChar(Commands::InputPlayerAction)
                              << endl;
-        cout << "Sending InputPlayerCommand" << endl;
+        D(cout << "Sending InputPlayerCommand" << endl;)
         // clients[playerIndex] << menu << endl;  // Changed
         getline(clients[playerIndex], action);
       }
@@ -604,8 +618,8 @@ class Server : public Common, public IServer {
     return action;
   }
   void broadcastStatus(string status) {
-    cout << "Displaying Status" << endl;
-    cout << status << endl;
+    D(cout << "Displaying Status" << endl;)
+    cout << convertSCToNL(status) << endl;
     for (int i = 1; i < n; i++) {
       clients[i] << status << endl;
     }
@@ -624,8 +638,8 @@ class Server : public Common, public IServer {
         ss << i + 1 << " ";
       }
     }
-    ss << "has skipped;";
-    cout << "Sending TeamSkippedStatus" << endl;
+    ss << "has skipped";
+    D(cout << "Sending TeamSkippedStatus" << endl;)
     if (nTeamSkips > 0) {
       cout << ss.str() << endl;
       for (int i = 1; i < n; i++) {
@@ -649,8 +663,8 @@ class Server : public Common, public IServer {
         ss << i + 1 << " ";
       }
     }
-    ss << "has skipped;";
-    cout << "Sending PlayerSkippedStatus" << endl;
+    ss << "has skipped";
+    D(cout << "Sending PlayerSkippedStatus" << endl;)
     if (nPlayerSkips > 0) {
       cout << ss.str() << endl;
       for (int i = 1; i < n; i++) {
@@ -709,7 +723,7 @@ class Client : public Common {
       server << playerType << endl;
     }
     while (charToCommand(cmd) != Commands::Acknowledged) {
-      cout << "waiting for input team number" << endl;
+      cout << "Waiting for input team number" << endl;
       server >> cmd;
       server.ignore();
       if (charToCommand(cmd) == Commands::InputTeamNumber) {
@@ -720,11 +734,10 @@ class Client : public Common {
       }
     }
     while (true) {
-      cout << "ENTER LOOP" << endl;
-
+      D(cout << "ENTER LOOP" << endl;)
       server >> cmd;
       server.ignore();
-      cout << "Received command for PlayerSkipped " << cmd << endl;
+      D(cout << "Received command for PlayerSkipped " << cmd << endl;)
       if (charToCommand(cmd) == Commands::PlayerSkippedStatus) {
         string skipstats;
         getline(server, skipstats);
@@ -734,7 +747,7 @@ class Client : public Common {
       }
       server >> cmd;
       server.ignore();
-      cout << "Received command for TeamSkipped " << cmd << endl;
+      D(cout << "Received command for TeamSkipped " << cmd << endl;)
       if (charToCommand(cmd) == Commands::TeamSkippedStatus) {
         string skipstats;
         getline(server, skipstats);
@@ -744,12 +757,12 @@ class Client : public Common {
       }
       string status;
       getline(server, status);
-      cout << "Displaying status" << endl;
-      cout << status << endl;
+      D(cout << "Displaying status" << endl;)
+      cout << convertSCToNL(status) << endl;
       cmd = 'z';
       server >> cmd;
       server.ignore();
-      cout << "Cmd " << cmd << endl;
+      D(cout << "Cmd " << cmd << endl;)
       if (charToCommand(cmd) == Commands::InputPlayerAction) {
         while (charToCommand(cmd) == Commands::InputPlayerAction) {
           string action, menu;
@@ -758,13 +771,13 @@ class Client : public Common {
           // getline(server, menu);
           // cout << menu << "\n";
           getline(cin, action);
-          cout << "You have entered " << action << endl;
+          D(cout << "You have entered " << action << endl;)
           server << action << endl;
           server >> cmd;
           server.ignore();
         }
       } else if (charToCommand(cmd) == Commands::Standby) {
-        cout << "Standby" << endl;
+        D(cout << "Standby" << endl;)
         // Do nothing
       } else if (charToCommand(cmd) == Commands::GameOver) {
         int winner;

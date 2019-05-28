@@ -4,10 +4,6 @@
 #include <unordered_set>
 #include <vector>
 
-#define DEBUG 0
-#define debug_print(args) \
-  if (DEBUG) cout << args << endl
-
 using namespace std;
 
 enum class LimbType { HAND, FEET };
@@ -48,7 +44,6 @@ class Hand : public Limb {
     cur_digits += x;
     if (cur_digits > max_digits) cur_digits -= max_digits;
     if (cur_digits == max_digits) dead_state = true;
-    debug_print("hand attacked");
   }
 };
 
