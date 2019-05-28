@@ -172,7 +172,7 @@ class Game {
     }
     // D: Displays the current player.
     ss << "\nPlayer " << currentPlayer->get_ord();
-    ss << "of Team " << currentPlayer->getTeamNumber() << "\n";
+    ss << " of Team " << currentPlayer->getTeamNumber() << "'s turn\n";
     return ss.str();
   }
 
@@ -526,13 +526,16 @@ class Server : public Common, public IServer {
   void teamHasSkipped(int teamIndex) { teamSkipState[teamIndex] = true; }
   void onTeamFinishSkipping() {
     stringstream ss;
+    int nTeamSkips = 0;
     ss << "Team ";
     for (int i = 0; i < n; i++) {
-      if (teamSkipState[i]) ss << i + 1;
-      if (i != n - 1) ss << ",";
+      if (teamSkipState[i]) {
+        nTeamSkips++;
+        ss << i + 1 << " ";
+      }
     }
     ss << "has skipped\n";
-    if (ss.str() != "Team ") {
+    if (nTeamSkips > 0) {
       cout << ss.str() << endl;
       for (int i = 1; i < n; i++) {
         clients[i] << commandToChar(Commands::TeamSkippedStatus) << endl;
@@ -547,12 +550,15 @@ class Server : public Common, public IServer {
   void onFinishSkipping() {
     stringstream ss;
     ss << "Player ";
+    int nPlayerSkips = 0;
     for (int i = 0; i < n; i++) {
-      if (playerSkipState[i]) ss << i + 1;
-      if (i != n - 1) ss << ",";
+      if (playerSkipState[i]) {
+        nPlayerSkips++;
+        ss << i + 1 << " ";
+      }
     }
     ss << "has skipped\n";
-    if (ss.str() != "Player ") {
+    if (nPlayerSkips > 0) {
       cout << ss.str() << endl;
       for (int i = 1; i < n; i++) {
         clients[i] << commandToChar(Commands::PlayerSkippedStatus) << endl;
