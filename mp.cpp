@@ -822,7 +822,7 @@ int main(int argc, char* argv[]) {
   string port = to_string(p);
   if (argc == 2) {
     string ns;
-    while (!nValidate(ns)) {
+    while (!validateIntString(ns)) {
       cout << "Enter the integer number of player between 2-6" << endl;
       getline(cin, ns);
     }
